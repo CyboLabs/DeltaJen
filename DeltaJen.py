@@ -102,6 +102,7 @@ class Hooks(object):
         Initialises the Hook class.
         """
         self.main = main
+        self.boot_info_cache = None
 
     def to_copy(self):
         return []
@@ -116,8 +117,35 @@ class Hooks(object):
         return []
 
     def boot_info(self):
+        if self.boot_info_cache is not None:
+            return self.boot_info_cache
+
         print("WARNING: boot information not supplied.")
-        return ()
+        edify = self.main.get_edify()
+        if edify.find('assert(package_extract_file("boot.img", ' +
+                      '"/tmp/boot.img")') != -1:
+            print("BML boot info found")
+            pos = edify.find('write_raw_image("/tmp/boot.img"') + 34
+            end = edify.find('"),', pos)
+            dev = edify[pos:end]
+            self.boot_info_cache = (dev, "bml")
+        elif edify.find('package_extract_file("boot.img", ' +
+                        '"/tmp/boot.img");') != -1:
+            print("MTD boot info found")
+            pos = edify.find('write_raw_image("/tmp/boot.img"') + 34
+            end = edify.find('");', pos)
+            dev = edify[pos:end]
+            self.boot_info_cache = (dev, "mtd")
+        elif edify.find('package_extract_file("boot.img", "') != -1:
+            print("EMMC boot info found")
+            pos = edify.find('package_extract_file("boot.img"') + 34
+            end = edify.find('");', pos)
+            dev = edify[pos:end]
+            self.boot_info_cache = (dev, "emmc")
+        if self.boot_info_cache is None:
+            print("WARNING: boot info could not be found.")
+            self.boot_info_cache = ()
+        return self.boot_info_cache
 
     def system_info(self):
         print("WARNING: system partition information not supplied")
@@ -246,12 +274,13 @@ class DeltaJen(object):
                 out[f_name] = self.file_object(f_name, data, ttime)
         return out
 
-    def get_edify(self, zip_file):
+    def get_edify(self, zip_file=None):
         """
         Gets the original edify script from input_zip.
         Returns:
             contents of the edify file as a string.
         """
+        zip_file = zip_file or self.input_zip
         return zip_file.read(
             "META-INF/com/google/android/updater-script").decode()
 
@@ -298,6 +327,8 @@ class DeltaJen(object):
 
         script.append(self.edify.ui_print("Patching system files..."))
         for f_name in to_diff:
+            if not f_name.startswith("system/"):
+                continue  # for now we skip anything none standard
             n_file = self.input_data[f_name]
             b_file = self.base_data[f_name]
             script.append(self.edify.apply_patch("/" + b_file['name'],
@@ -307,6 +338,7 @@ class DeltaJen(object):
                           b_file['sha1'],
                           "patch/" + b_file['name'] + ".p"))
 
+        script.extend(self.flash_boot())
         script.extend(self.hooks.post_flash_script())
 
         if system_info:
