@@ -69,12 +69,17 @@ Class Hooks:
             after applying the patches.
             An example of this is for unified devices, where different
             variants use different files.
-        patch_boot:
+        boot_info:
             since the boot parameters can't be easily detected, patching
             the boot image is disabled by default.
             If you would like to patch the boot image, include the
             partition, and it's type in a tuple. for example:
             ('/dev/block/platform/msm_sdcc.1/by-name/boot', 'emmc')
+        system_info:
+            since the system parameters can't be easily detected, mounting
+            the system needs some parameters.
+            Include the partition, and it's type in a tuple. for example:
+            ('/dev/block/platform/msm_sdcc.1/by-name/system', 'ext4')
         [symlinks:
             This should return a list of tuples in the form of
             ('base file location', ['symlink location 1', 'location 2']).
@@ -114,6 +119,10 @@ class Hooks(object):
         print("WARNING: boot information not supplied.")
         return ()
 
+    def system_info(self):
+        print("WARNING: system partition information not supplied")
+        return ()
+
 
 class Edify(object):
     def apply_patch_check(self, f_name, *sha):
@@ -133,6 +142,13 @@ class Edify(object):
             cmd += ', %s, package_extract_file("%s")' % patchpairs[i:i+2]
         cmd += ');'
         return cmd
+
+    def mount(self, part, part_type, device, mnt_pnt):
+        return 'mount("%s", "%s", "%s", "%s");' % (
+            part, part_type, device, mnt_pnt)
+
+    def unmount(self, mnt_pnt):
+        return 'unmount("%s");' % mnt_pnt
 
 
 """
@@ -248,7 +264,19 @@ class DeltaJen(object):
         to_diff = self.find_diffs()
         amount = len(to_diff)
         counter = 1
-        script = [self.edify.ui_print("Verifying current system...")]
+        script = []
+        system_info = self.hooks.system_info()
+        system_mnt_pnt = "/system"
+        if system_info:
+            system_part = system_info[1]
+            system_part_type = self.part_types[system_part]
+            system_dev = system_info[0]
+            script.append(self.edify.ui_print("Mounting system..."))
+            script.append(self.edify.mount(
+                system_part, system_part_type, system_dev, system_mnt_pnt
+            ))
+
+        script.append(self.edify.ui_print("Verifying current system..."))
         for f_name in to_diff:
             print("patching " + f_name + ": " + str(counter) + " of " + str(amount))
             counter += 1
@@ -273,13 +301,17 @@ class DeltaJen(object):
             n_file = self.input_data[f_name]
             b_file = self.base_data[f_name]
             script.append(self.edify.apply_patch("/" + b_file['name'],
-                                   "-",
-                                   n_file['size'],
-                                   n_file['sha1'],
-                                   b_file['sha1'],
-                                   "patch/" + b_file['name'] + ".p"))
+                          "-",
+                          n_file['size'],
+                          n_file['sha1'],
+                          b_file['sha1'],
+                          "patch/" + b_file['name'] + ".p"))
 
         script.extend(self.hooks.post_flash_script())
+
+        if system_info:
+            script.append(self.edify.unmount(system_mnt_pnt))
+
         self.add_updater(script)
 
         self.output_zip.close()
@@ -504,3 +536,4 @@ if __name__ == '__main__':
 
     import argparse
     cli()
+
