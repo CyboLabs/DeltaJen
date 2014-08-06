@@ -30,6 +30,7 @@ __version__ = "0.1a1"
 
 from hashlib import sha1
 from os import path
+from re import search as re_search
 from subprocess import Popen
 from tempfile import NamedTemporaryFile
 from time import localtime, time
@@ -103,6 +104,7 @@ class Hooks(object):
         """
         self.main = main
         self.boot_info_cache = None
+        self.system_info_cache = None
 
     def to_copy(self):
         return []
@@ -148,8 +150,22 @@ class Hooks(object):
         return self.boot_info_cache
 
     def system_info(self):
+        if self.system_info_cache is not None:
+            return self.system_info_cache
         print("WARNING: system partition information not supplied")
-        return ()
+
+        edify = self.main.get_edify()
+        mount = re_search(r'mount\("(\S+)"\s*,\s*' +
+                          '"(\S+)"\s*,\s*"(\S+)"\s*,\s*"/system"\);', edify)
+        if not mount:
+            self.system_info_cache = ()
+            print("WARNING: system mount info could not be found.")
+        else:
+            print("Detected system mount info.")
+            part = mount.group(1)
+            dev = mount.group(3)
+            self.system_info_cache = (dev, part)
+        return self.system_info_cache
 
 
 class Edify(object):
