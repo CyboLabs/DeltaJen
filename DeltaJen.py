@@ -569,7 +569,9 @@ def cli():
                         help="Output version information")
 
     options = parser.parse_args()
-    print(options.base_zip)
+    dj = DeltaJen(options.base_zip, options.input_zip,
+                  options.output_zip)
+    dj.generate()
 
 if __name__ == '__main__':
     from sys import exit as sys_exit, stderr, version_info
