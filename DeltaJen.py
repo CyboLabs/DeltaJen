@@ -29,9 +29,9 @@ __program__ = "DeltaJen"
 __version__ = "0.1a1"
 
 from hashlib import sha1
-from os import path
+from os import path, devnull
 from re import search as re_search
-from subprocess import Popen
+from subprocess import Popen, STDOUT
 from tempfile import NamedTemporaryFile
 from time import localtime, time
 from zipfile import ZipFile, ZIP_DEFLATED, ZipInfo
@@ -222,7 +222,8 @@ class DeltaJen(object):
     Generate an incremental update based off two zips.
     """
 
-    def __init__(self, base_zip, input_zip, output_zip, hooks=Hooks, edify=Edify):
+    def __init__(self, base_zip, input_zip, output_zip,
+                 hooks=Hooks, edify=Edify, verbose=False):
         """
         Initialises the DeltaJen class.
         Args:
@@ -244,6 +245,7 @@ class DeltaJen(object):
 
         self.base_data = None
         self.input_data = None
+        self.verbose = verbose
 
         self.edify = edify()
         self.hooks = hooks(self)
@@ -472,9 +474,10 @@ class DeltaJen(object):
         b_temp = self.write_to_temp(b_file)
         n_temp = self.write_to_temp(n_file)
         p_temp = NamedTemporaryFile()
-        print(b_file['name'])
+
         cmd.extend([b_temp.name, n_temp.name, p_temp.name])
-        p = Popen(cmd)
+        out = STDOUT if self.verbose else open(devnull, 'w')
+        p = Popen(cmd, stdout=out)
         _, err = p.communicate()
         if err or p.returncode != 0:
             print("WARNING: failure running %s" % cmd)
@@ -564,13 +567,15 @@ def cli():
                         required=True, help="Location of the new zip")
     parser.add_argument('-o', action="store", dest="output_zip",
                         required=True, help="Location of the output zip")
+    parser.add_argument('-v', action="store_true", dest="verbose",
+                        default=False, help="verbose logging")
     parser.add_argument('--version', action='version',
                         version='%(prog)s {}'.format(__version__),
                         help="Output version information")
 
     options = parser.parse_args()
     dj = DeltaJen(options.base_zip, options.input_zip,
-                  options.output_zip)
+                  options.output_zip, verbose=options.verbose)
     dj.generate()
 
 if __name__ == '__main__':
