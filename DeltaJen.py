@@ -29,7 +29,7 @@ __program__ = "DeltaJen"
 __version__ = "0.1a1"
 
 from hashlib import sha1
-from os import path, devnull
+from os import path, devnull, name as os_name
 from re import search as re_search
 from subprocess import Popen, STDOUT
 from tempfile import NamedTemporaryFile
@@ -457,6 +457,12 @@ class DeltaJen(object):
         Returns:
             raw data of the patch file.
         """
+        if os_name != "nt":
+            if not bs_diff:
+                print("ERROR: python bsdiff4 is required for windows")
+                exit(1)
+            return bs_diff(bytes(b_file['data']), bytes(n_file['data']))
+
         diff_programs = {
             ".gz": ["imgdiff"],
             ".img": ["imgdiff"],
