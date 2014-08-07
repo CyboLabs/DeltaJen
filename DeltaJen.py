@@ -2,6 +2,7 @@
 #
 # Copyright (C) 2014  Anthony King
 # Copyright (C) 2014  CyboLabs
+# Copyright (C) 2014  GermainZ
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,8 +17,8 @@
 # limitations under the License.
 #
 
-"""
-Generate an incremental patch to work on all aosp based recoveries.
+"""Generate an incremental patch to work on all aosp based recoveries.
+
 This is a standalone script which takes two zips, and generates an OTA for
 roms, mods, or gapps.
 """
@@ -42,83 +43,73 @@ try:
 except ImportError:
     bs_patch = None
 
-"""
-Class Hooks:
-    Base class for the DeltaJen Hooks.
-    Subclass this if you are using a none standard device that usually
-    requires files being changed during a standard flash, or at run time.
-
-    Functions:
-        These functions are available for the user to change.
-        to_copy:
-            This should return a list of files that should not be patched
-            and instead just copy the file.
-            An example of this is for unified devices, where different
-            variants have extra folders that are copied to system based
-            on which model the device is.
-        extra_files:
-            This should return a list of files for files that are not in
-            /system or boot.img.
-            An example of this is for unified devices, where different
-            variants use different kernels.
-        pre_flash_script:
-            This should return a list of edify commands that need to go
-            before applying the patches.
-            An example of this is for custom handling of a partition.
-        post_flash_script:
-            This should return a list of edify commands that need to go
-            after applying the patches.
-            An example of this is for unified devices, where different
-            variants use different files.
-        boot_info:
-            since the boot parameters can't be easily detected, patching
-            the boot image is disabled by default.
-            If you would like to patch the boot image, include the
-            partition, and it's type in a tuple. for example:
-            ('/dev/block/platform/msm_sdcc.1/by-name/boot', 'emmc')
-        system_info:
-            since the system parameters can't be easily detected, mounting
-            the system needs some parameters.
-            Include the partition, and it's type in a tuple. for example:
-            ('/dev/block/platform/msm_sdcc.1/by-name/system', 'ext4')
-        [symlinks:
-            This should return a list of tuples in the form of
-            ('base file location', ['symlink location 1', 'location 2']).
-            An example of this is for custom roms that use busybox.]
-    Variables:
-        main:
-            This is a copy of the DeltaJen class. Through this the
-            user can access all variables and functions if needed.
-            Refer to the DeltaJen documentation for a list of
-            functions and variables
-"""
-
 
 class Hooks(object):
+    """Base class for the DeltaJen Hooks, to accommodate for custom zips.
+
+    Subclass this if you are using a non standard device that usually
+    requires files being changed during a standard flash or at run time.
     """
-    Hook class for DeltaJen, to accommodate for custom zips.
-    """
+
     def __init__(self, main):
-        """
-        Initialises the Hook class.
+        """Initialise the Hook class.
+
+        Args:
+            main (DeltaJen): this is a copy of the DeltaJen class instance.
+                Through this, the user can access all variables and functions
+                if needed. Refer to the DeltaJen documentation for a list of
+                functions and variables
+
+        Attributes:
+            boot_info_cache (tuple of strings): tuple containing the boot
+                partition's location and its type. For example:
+                    ('/dev/block/platform/msm_sdcc.1/by-name/boot', 'emmc')
+            system_info_cache (tuple of strings): typle containing the system
+                partition's location and its type. For example:
+                    ('/dev/block/platform/msm_sdcc.1/by-name/system', 'ext4')
         """
         self.main = main
         self.boot_info_cache = None
         self.system_info_cache = None
 
     def to_copy(self):
+        """Return a list of files that should be copied without being patched.
+
+        An example of this is for unified devices, where different
+        variants have extra folders that are copied to system based
+        on which model the device is.
+        """
         return []
 
     def extra_files(self):
+        """Return a list of files that are not in /system or boot.img.
+
+        An example of this is for unified devices, where different variants
+        use different kernels.
+        """
         return []
 
     def pre_flash_script(self):
+        """Return a list of edify commands to be called before patching.
+
+        An example of this is for custom handling of a partition.
+        """
         return []
 
     def post_flash_script(self):
+        """Return a list of edify commands to be called after patching.
+
+        An example of this is for unified devices, where different variants
+        use different files.
+        """
         return []
 
     def boot_info(self):
+        """Find and return the boot partition info.
+
+        If not correctly detected for your device, set boot_info_cache to
+        the correct value.
+        """
         if self.boot_info_cache is not None:
             return self.boot_info_cache
 
@@ -150,6 +141,11 @@ class Hooks(object):
         return self.boot_info_cache
 
     def system_info(self):
+        """Find and return the system partition info.
+
+        If not correctly detected for your device, set system_info_cache to
+        the correct value.
+        """
         if self.system_info_cache is not None:
             return self.system_info_cache
         print("WARNING: system partition information not supplied")
@@ -169,6 +165,8 @@ class Hooks(object):
 
 
 class Edify(object):
+    """Class for common edify methods."""
+
     def apply_patch_check(self, f_name, *sha):
         return 'apply_patch_check("%s"' % f_name + \
                "".join([', "%s"' % (i,) for i in sha]) + \
@@ -195,41 +193,23 @@ class Edify(object):
         return 'unmount("%s");' % mnt_pnt
 
 
-"""
-Class DeltaJen:
-    Variables:
-        base_zip    (ZipFile): Location of the original zip to diff against.
-        input_zip   (ZipFile): Location of the new zip to diff with.
-        output_zip  (ZipFile): Location of the zip to be generated.
-        base_data   (dict): Dict built by `_load_files` to contain the
-                            contents of the `base_zip`.
-        input_data  (dict): Dict built by `_load_files` to contain the
-                            contents of the `input_zip`.
-
-    Functions:
-        __init__    : Initialises the DeltaJen class.
-        get_edify  : Gets the original edify script from input_zip.
-        computer_diffs : Creates the diff objects for all the changed files.
-        find_diffs : Filters out changed files from the input zip.
-        load_files : Load all the files under /system/ from a ZipFile.
-        generate    : Main method for building the new zip and edify script.
-        load_data   : Calls `_load_files` for all needed zips.
-"""
-
-
 class DeltaJen(object):
-    """
-    Generate an incremental update based off two zips.
-    """
+    """Generate an incremental update based off two zips."""
 
     def __init__(self, base_zip, input_zip, output_zip,
                  hooks=Hooks, edify=Edify, verbose=False):
-        """
-        Initialises the DeltaJen class.
+        """Initialize the DeltaJen class.
+
         Args:
             base_zip (str): Location of the original zip to diff against.
             input_zip (str): Location of the new zip to diff with.
             output_zip (str): Location of the zip to be generated.
+
+        Keyword args:
+            hooks (Hooks): provide extended class if necessary.
+            edify (Edify): provide extended class if necessary.
+            verbose (bool): makes the script more verbose, useful for
+                debugging.
 
         Raises:
             FileNotFound: An error occurred trying to find a supplied file.
@@ -263,17 +243,18 @@ class DeltaJen(object):
         }
 
     def load_data(self):
-        """Loads the data from the zips into variables
-        """
+        """Load the data from the zips into variables."""
         self.base_ptr = self.load_files(self.base_zip)
         self.input_ptr = self.load_files(self.input_zip)
 
     def load_files(self, zip_file):
-        """
-        Load all the files under /system/ from a ZipFile.
+        """Load all the files under /system/ from a ZipFile.
+
         This is based on the AOSP function `LoadSystemFiles`.
+
         Args:
             z (ZipFile): ZipFile to load the files from.
+
         Returns:
             out {filename (str): File object (File)}
                 dictionary of the file list + information + data
@@ -291,19 +272,18 @@ class DeltaJen(object):
         return out
 
     def get_edify(self, zip_file=None):
-        """
-        Gets the original edify script from input_zip.
-        Returns:
-            contents of the edify file as a string.
+        """Get the edify script's content as a string.
+
+        Keyword args:
+            zip_file (ZipFile): the edify script to read (input_zip is used if
+                this is not provided).
         """
         zip_file = zip_file or self.input_zip
         return zip_file.read(
             "META-INF/com/google/android/updater-script").decode()
 
     def get_file_from_ptr(self, file_ptr):
-        """
-        produce a file object based on the data in a pointer.
-        """
+        """Produce a file object based on the data in a pointer."""
         zip_file = file_ptr['zip']
         f_name = file_ptr['name']
         data = zip_file.read(f_name)
@@ -311,9 +291,7 @@ class DeltaJen(object):
         return self.file_object(f_name, data, ttime)
 
     def generate(self):
-        """
-        Generates the new zip with all the diff files
-        """
+        """Generate the new zip with all the diff files."""
         if not all([self.base_ptr, self.input_ptr]):
             self.load_data()
         to_diff = self.find_diffs()
@@ -343,7 +321,7 @@ class DeltaJen(object):
             self.add_to_zip(p_file, self.output_zip)
 
             if not f_name.startswith("system/"):
-                continue  # for now we skip anything none standard
+                continue  # for now we skip anything non standard
             script.append(self.edify.apply_patch_check("/" + f_name,
                                                        b_file['sha1'],
                                                        n_file['sha1']))
@@ -354,7 +332,7 @@ class DeltaJen(object):
         script.append(self.edify.ui_print("Patching system files..."))
         for f_name in to_diff:
             if not f_name.startswith("system/"):
-                continue  # for now we skip anything none standard
+                continue  # for now we skip anything non standard
             n_ptr = self.input_ptr[f_name]
             b_ptr = self.base_ptr[f_name]
             n_file = self.get_file_from_ptr(n_ptr)
@@ -377,10 +355,7 @@ class DeltaJen(object):
         self.output_zip.close()
 
     def assert_boot(self):
-        """
-        some people may not want to flash a boot image.
-        make it easier for them to remove it from the script.
-        """
+        """Generate assert check for the boot image."""
         boot_info = self.hooks.boot_info()
         if not boot_info:
             return []
@@ -398,10 +373,7 @@ class DeltaJen(object):
         )]
 
     def flash_boot(self):
-        """
-        Some people may want to flash a boot image, others
-        may want to patch it. Make it easier for them to choose.
-        """
+        """Generate flash script for the boot image."""
         boot_info = self.hooks.boot_info()
         if not boot_info:
             return []
@@ -421,6 +393,12 @@ class DeltaJen(object):
         )]
 
     def add_updater(self, script):
+        """Add updater script and binary to the update zip.
+
+        Args:
+            script (list): list of the edify commands that constitute the
+                updater-script.
+        """
         script = '\n'.join(script)
         s_file = {
             'name': "META-INF/com/google/android/updater-script",
@@ -436,8 +414,8 @@ class DeltaJen(object):
         self.add_to_zip(ed_bin, self.output_zip)
 
     def find_diffs(self):
-        """
-        Filter out changed files from the input zip.
+        """Filter out changed files from the input zip.
+
         Returns:
             to_diff (list): list of all the files that need a patch.
         """
@@ -456,8 +434,8 @@ class DeltaJen(object):
         return to_diff
 
     def find_removes(self):
-        """
-        Finds files to be removed from the system.
+        """Find files to be removed from the system.
+
         Returns:
             to_remove (list): list of all the files that need removing.
         """
@@ -468,8 +446,12 @@ class DeltaJen(object):
         return to_remove
 
     def compute_diff(self, b_file, n_file):
-        """
-        Create the patch
+        """Create the patch.
+
+        Args:
+            b_file (dict, see file_object): base file to diff against.
+            n_file (dict, see file_object): new file to diff with.
+
         Returns:
             raw data of the patch file.
         """
@@ -508,21 +490,21 @@ class DeltaJen(object):
 
     @staticmethod
     def _is_symlink(info):
-        """
-        Check if the ZipInfo object represents a symlink.
+        """Check if the ZipInfo object represents a symlink.
+
         This is the AOSP function `IsSymlink` (adapted for 3.x support).
+
         Args:
             info (ZipInfo): ZipInfo object of a file in a zip.
+
         Returns (boolean):
-            true if symlink, else false.
+            True if symlink, else False.
         """
         return (info.external_attr >> 16) & 0o770000 == 0o120000
 
     @staticmethod
     def file_object(name, data, time):
-        """
-        create a file object as a dictionary
-        """
+        """Create a file object as a dictionary."""
         return {
             'name': name,
             'data': data,
@@ -533,9 +515,9 @@ class DeltaJen(object):
 
     @staticmethod
     def file_pointer(name, zip_file):
-        """
-        Create a file pointer as a dictionary.
-        This holds only the name, and a pointer to the zip.
+        """Create a file pointer as a dictionary.
+
+        This holds only the name and a pointer to the zip.
         """
         return {
             'name': name,
@@ -544,9 +526,7 @@ class DeltaJen(object):
 
     @staticmethod
     def add_to_zip(file_obj, z_file):
-        """
-        Adds the file to the zip and sets the attributes
-        """
+        """Add the file to the zip and sets the attributes."""
         zinfo = ZipInfo(file_obj['name'], file_obj['time'])
         zinfo.compress_type = z_file.compression
         zinfo.external_attr = 0o644 << 16
@@ -561,9 +541,7 @@ class DeltaJen(object):
 
 
 class FileNotFound(Exception):
-    """
-    Error class for handling missing files
-    """
+    """Error class for handling missing files."""
     def __init__(self, value):
         """
         Args:
@@ -579,9 +557,7 @@ class FileNotFound(Exception):
 
 
 class HookNotSubclassed(Exception):
-    """
-    Error class for handling Hook not being subclassed
-    """
+    """Error class for handling Hook not being subclassed."""
     def __init__(self):
         self.message = "hook is not a subclass of Hook"
 
@@ -590,9 +566,7 @@ class HookNotSubclassed(Exception):
 
 
 def cli():
-    """
-    Command line interface to build an incremental update
-    """
+    """Command line interface to build an incremental update."""
     parser = argparse.ArgumentParser(prog=__program__)
     parser.add_argument('-b', action="store", dest="base_zip",
                         required=True, help="Location of the base zip")
