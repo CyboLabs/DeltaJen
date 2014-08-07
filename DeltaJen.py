@@ -243,8 +243,8 @@ class DeltaJen(object):
         self.input_zip = ZipFile(input_zip)
         self.output_zip = ZipFile(output_zip, 'w', ZIP_DEFLATED)
 
-        self.base_data = None
-        self.input_data = None
+        self.base_ptr = None
+        self.input_ptr = None
         self.verbose = verbose
 
         self.edify = edify()
@@ -265,8 +265,8 @@ class DeltaJen(object):
     def load_data(self):
         """Loads the data from the zips into variables
         """
-        self.base_data = self.load_files(self.base_zip)
-        self.input_data = self.load_files(self.input_zip)
+        self.base_ptr = self.load_files(self.base_zip)
+        self.input_ptr = self.load_files(self.input_zip)
 
     def load_files(self, zip_file):
         """
@@ -287,9 +287,7 @@ class DeltaJen(object):
                     info.filename in extra) and \
                     not self._is_symlink(info):
                 f_name = info.filename
-                data = zip_file.read(f_name)
-                ttime = info.date_time
-                out[f_name] = self.file_object(f_name, data, ttime)
+                out[f_name] = self.file_pointer(f_name, zip_file)
         return out
 
     def get_edify(self, zip_file=None):
@@ -302,11 +300,21 @@ class DeltaJen(object):
         return zip_file.read(
             "META-INF/com/google/android/updater-script").decode()
 
+    def get_file_from_ptr(self, file_ptr):
+        """
+        produce a file object based on the data in a pointer.
+        """
+        zip_file = file_ptr['zip']
+        f_name = file_ptr['name']
+        data = zip_file.read(f_name)
+        ttime = zip_file.getinfo(f_name).date_time
+        return self.file_object(f_name, data, ttime)
+
     def generate(self):
         """
         Generates the new zip with all the diff files
         """
-        if not all([self.base_data, self.input_data]):
+        if not all([self.base_ptr, self.input_ptr]):
             self.load_data()
         to_diff = self.find_diffs()
         amount = len(to_diff)
@@ -327,8 +335,8 @@ class DeltaJen(object):
         for f_name in to_diff:
             print("patching " + f_name + ": " + str(counter) + " of " + str(amount))
             counter += 1
-            n_file = self.input_data[f_name]
-            b_file = self.base_data[f_name]
+            n_file = self.get_file_from_ptr(self.input_ptr[f_name])
+            b_file = self.get_file_from_ptr(self.base_ptr[f_name])
             p_data = self.compute_diff(b_file, n_file)
             patch_path = "patch/" + f_name + ".p"
             p_file = self.file_object(patch_path, p_data, localtime(time()))
@@ -347,8 +355,10 @@ class DeltaJen(object):
         for f_name in to_diff:
             if not f_name.startswith("system/"):
                 continue  # for now we skip anything none standard
-            n_file = self.input_data[f_name]
-            b_file = self.base_data[f_name]
+            n_ptr = self.input_ptr[f_name]
+            b_ptr = self.base_ptr[f_name]
+            n_file = self.get_file_from_ptr(n_ptr)
+            b_file = self.get_file_from_ptr(b_ptr)
             script.append(self.edify.apply_patch("/" + b_file['name'],
                           "-",
                           n_file['size'],
@@ -375,10 +385,12 @@ class DeltaJen(object):
         if not boot_info:
             return []
         part_type = self.part_types[boot_info[1]]
-        b_size = self.base_data['boot.img']['size']
-        n_size = self.input_data['boot.img']['size']
-        b_sha = self.base_data['boot.img']['sha1']
-        n_sha = self.input_data['boot.img']['sha1']
+        b_file = self.get_file_from_ptr(self.base_ptr['boot.img'])
+        n_file = self.get_file_from_ptr(self.input_ptr['boot.img'])
+        b_size = b_file['size']
+        n_size = n_file['size']
+        b_sha = b_file['sha1']
+        n_sha = n_file['sha1']
         return [self.edify.apply_patch_check(
             "%s:%s:%d:%s:%d:%s" % (
                 part_type, boot_info[0],
@@ -394,10 +406,12 @@ class DeltaJen(object):
         if not boot_info:
             return []
         part_type = self.part_types[boot_info[1]]
-        b_size = self.base_data['boot.img']['size']
-        n_size = self.input_data['boot.img']['size']
-        b_sha = self.base_data['boot.img']['sha1']
-        n_sha = self.input_data['boot.img']['sha1']
+        b_file = self.get_file_from_ptr(self.base_ptr['boot.img'])
+        n_file = self.get_file_from_ptr(self.input_ptr['boot.img'])
+        b_size = b_file['size']
+        n_size = n_file['size']
+        b_sha = b_file['sha1']
+        n_sha = n_file['sha1']
         return [self.edify.apply_patch(
             "%s:%s:%d:%s:%d:%s" % (
                 part_type, boot_info[0],
@@ -429,9 +443,11 @@ class DeltaJen(object):
         """
         to_diff = []
         to_ignore = self.hooks.to_copy()
-        for f_name in self.input_data.keys():
-            n_file = self.input_data[f_name]
-            b_file = self.base_data.get(f_name, None)
+        for f_name in self.input_ptr.keys():
+            n_file = self.get_file_from_ptr(self.input_ptr[f_name])
+            b_file = self.base_ptr.get(f_name, None)
+            if b_file:
+                b_file = self.get_file_from_ptr(b_file)
 
             if b_file is None or f_name in to_ignore:
                 self.add_to_zip(n_file, self.output_zip)
@@ -446,8 +462,8 @@ class DeltaJen(object):
             to_remove (list): list of all the files that need removing.
         """
         to_remove = []
-        for f_name in self.base_data.keys():
-            if not self.input_data.get(f_name, None):
+        for f_name in self.base_ptr.keys():
+            if not self.input_ptr.get(f_name, None):
                 to_remove.append(f_name)
         return to_remove
 
@@ -457,7 +473,7 @@ class DeltaJen(object):
         Returns:
             raw data of the patch file.
         """
-        if os_name != "nt":
+        if os_name == "nt":
             if not bs_diff:
                 print("ERROR: python bsdiff4 is required for windows")
                 exit(1)
@@ -513,6 +529,17 @@ class DeltaJen(object):
             'time': time,
             'size': len(data),
             'sha1': sha1(data).hexdigest()
+        }
+
+    @staticmethod
+    def file_pointer(name, zip_file):
+        """
+        Create a file pointer as a dictionary.
+        This holds only the name, and a pointer to the zip.
+        """
+        return {
+            'name': name,
+            'zip': zip_file
         }
 
     @staticmethod
