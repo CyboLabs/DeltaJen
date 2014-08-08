@@ -660,15 +660,6 @@ class FileNotFound(Exception):
         return repr(self.message)
 
 
-class HookNotSubclassed(Exception):
-    """Error class for handling Hook not being subclassed."""
-    def __init__(self):
-        self.message = "hook is not a subclass of Hook"
-
-    def __str__(self):
-        return repr(self.message)
-
-
 def cli():
     """Command line interface to build an incremental update."""
     parser = argparse.ArgumentParser(prog=__program__)
