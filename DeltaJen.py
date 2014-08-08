@@ -61,16 +61,16 @@ class Hooks(object):
                 functions and variables
 
         Attributes:
-            boot_info_cache (tuple of strings): tuple containing the boot
+            _boot_info_cache (tuple of strings): tuple containing the boot
                 partition's location and its type. For example:
                     ('/dev/block/platform/msm_sdcc.1/by-name/boot', 'emmc')
-            system_info_cache (tuple of strings): typle containing the system
+            _system_info_cache (tuple of strings): typle containing the system
                 partition's location and its type. For example:
                     ('/dev/block/platform/msm_sdcc.1/by-name/system', 'ext4')
         """
         self.main = main
-        self.boot_info_cache = None
-        self.system_info_cache = None
+        self._boot_info_cache = None
+        self._system_info_cache = None
 
     def to_copy(self):
         """Return a list of files that should be copied without being patched.
@@ -107,11 +107,11 @@ class Hooks(object):
     def boot_info(self):
         """Find and return the boot partition info.
 
-        If not correctly detected for your device, set boot_info_cache to
-        the correct value.
+        If not correctly detected for your device, overwrite this
+        to return the correct value.
         """
-        if self.boot_info_cache is not None:
-            return self.boot_info_cache
+        if self._boot_info_cache is not None:
+            return self._boot_info_cache
 
         print("WARNING: boot information not supplied.")
         edify = self.main.get_edify()
@@ -121,47 +121,47 @@ class Hooks(object):
             pos = edify.find('write_raw_image("/tmp/boot.img"') + 34
             end = edify.find('"),', pos)
             dev = edify[pos:end]
-            self.boot_info_cache = (dev, "bml")
+            self._boot_info_cache = (dev, "bml")
         elif edify.find('package_extract_file("boot.img", ' +
                         '"/tmp/boot.img");') != -1:
             print("MTD boot info found")
             pos = edify.find('write_raw_image("/tmp/boot.img"') + 34
             end = edify.find('");', pos)
             dev = edify[pos:end]
-            self.boot_info_cache = (dev, "mtd")
+            self._boot_info_cache = (dev, "mtd")
         elif edify.find('package_extract_file("boot.img", "') != -1:
             print("EMMC boot info found")
             pos = edify.find('package_extract_file("boot.img"') + 34
             end = edify.find('");', pos)
             dev = edify[pos:end]
-            self.boot_info_cache = (dev, "emmc")
-        if self.boot_info_cache is None:
+            self._boot_info_cache = (dev, "emmc")
+        else:
             print("WARNING: boot info could not be found.")
-            self.boot_info_cache = ()
-        return self.boot_info_cache
+            self._boot_info_cache = ()
+        return self._boot_info_cache
 
     def system_info(self):
         """Find and return the system partition info.
 
-        If not correctly detected for your device, set system_info_cache to
-        the correct value.
+        If not correctly detected for your device, overwrite this
+        to return the correct value.
         """
-        if self.system_info_cache is not None:
-            return self.system_info_cache
+        if self._system_info_cache is not None:
+            return self._system_info_cache
         print("WARNING: system partition information not supplied")
 
         edify = self.main.get_edify()
         mount = re_search(r'mount\("(\S+)"\s*,\s*' +
                           '"(\S+)"\s*,\s*"(\S+)"\s*,\s*"/system"\);', edify)
         if not mount:
-            self.system_info_cache = ()
+            self._system_info_cache = ()
             print("WARNING: system mount info could not be found.")
         else:
             print("Detected system mount info.")
             part = mount.group(1)
             dev = mount.group(3)
-            self.system_info_cache = (dev, part)
-        return self.system_info_cache
+            self._system_info_cache = (dev, part)
+        return self._system_info_cache
 
 
 class Edify(object):
