@@ -168,29 +168,74 @@ class Edify(object):
     """Class for common edify methods."""
 
     def apply_patch_check(self, f_name, *sha):
-        return 'apply_patch_check("%s"' % f_name + \
-               "".join([', "%s"' % (i,) for i in sha]) + \
-               ') || abort("\\"%s\\" has unexpected contents.");' % f_name
+        """Check that the given file (or mount point reference) has
+        one of the given sha1 hashes.
+
+        Args:
+            f_name (str): File name and path of the file to check.
+            sha (str): tuple of sha1sums to check the file against.
+        """
+        cmd = 'apply_patch_check("%s"'
+        cmd += ''.join([', "%s"' % i for i in sha])
+        cmd += ') || abort("\\"%s\\" has unexpected contents.");'
+        cmd = cmd % (f_name, f_name)
+        return cmd
 
     def ui_print(self, message):
-        return 'ui_print("%s");' % message
+        """Log a message to the screen
 
-    def apply_patch(self, srcfile, tgtfile, tgtsize, tgtsha1, *patchpairs):
-        if len(patchpairs) % 2 != 0 or len(patchpairs) == 0:
+        Args:
+            message (str): message to display on screen.
+        """
+        cmd = 'ui_print("%s");'
+        cmd = cmd % message
+        return cmd
+
+    def apply_patch(self, b_name, n_name, n_size, n_sha, *patch_pairs):
+        """Apply binary patches (in *patch_pairs) to the given base
+        file (b_name) to produce the new file (n_name)
+
+        Args:
+            b_name (str): File name and path of the base file.
+            n_name (str): File name and path of the new file.
+                Can be "-" to overwrite the base file.
+            n_size (int): Size of the new file.
+            n_sha (str): sha1sum of the new file
+            patch_pairs (str): tuple of the base file sha1sum,
+                and the file name of the patch file.
+        """
+        if len(patch_pairs) % 2 != 0 or len(patch_pairs) == 0:
             raise ValueError("bad patches given to ApplyPatch")
-        cmd = 'apply_patch("%s", "%s", %s, %d' % (
-            srcfile, tgtfile, tgtsha1, tgtsize)
-        for i in range(0, len(patchpairs), 2):
-            cmd += ', %s, package_extract_file("%s")' % patchpairs[i:i+2]
+        cmd = 'apply_patch("%s", "%s", %s, %d'
+        cmd = cmd % (b_name, n_name, n_sha, n_size)
+        for i in range(0, len(patch_pairs), 2):
+            cmd += ', %s, package_extract_file("%s")'
+            cmd = cmd % patch_pairs[i:i+2]
         cmd += ');'
         return cmd
 
-    def mount(self, part, part_type, device, mnt_pnt):
-        return 'mount("%s", "%s", "%s", "%s");' % (
-            part, part_type, device, mnt_pnt)
+    def mount(self, fs_type, part_type, device, mnt_pnt):
+        """Mount the partition with given mount point (mnt_pnt)
+
+        Args:
+            fs_type (str): File system type (e.g. ext4)
+            part_type (str): Partition type (e.g. EMMC)
+            device (str): Partition device location
+            mnt_pnt (str): mount point
+        """
+        cmd = 'mount("%s", "%s", "%s", "%s");'
+        cmd = cmd % (fs_type, part_type, device, mnt_pnt)
+        return cmd
 
     def unmount(self, mnt_pnt):
-        return 'unmount("%s");' % mnt_pnt
+        """Unmount the partition with given mount point (mnt_pnt)
+
+        Args:
+            mnt_pnt (str): mount point
+        """
+        cmd = 'unmount("%s");'
+        cmd = cmd % mnt_pnt
+        return cmd
 
 
 class DeltaJen(object):
