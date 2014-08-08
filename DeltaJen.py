@@ -335,68 +335,127 @@ class DeltaJen(object):
         ttime = zip_file.getinfo(f_name).date_time
         return self.file_object(f_name, data, ttime)
 
-    def generate(self):
-        """Generate the new zip with all the diff files."""
-        if not all([self.base_ptr, self.input_ptr]):
-            self.load_data()
-        to_diff = self.find_diffs()
-        amount = len(to_diff)
-        counter = 1
-        script = []
-        system_info = self.hooks.system_info()
-        system_mnt_pnt = "/system"
-        if system_info:
-            system_part = system_info[1]
-            system_part_type = self.part_types[system_part]
-            system_dev = system_info[0]
-            script.append(self.edify.ui_print("Mounting system..."))
-            script.append(self.edify.mount(
-                system_part, system_part_type, system_dev, system_mnt_pnt
-            ))
+    def mount_system(self):
+        """Generate edify commands for mounting system, and return
+        as a list
 
-        script.append(self.edify.ui_print("Verifying current system..."))
+        Returns:
+            (list of str): list of commands for mounting the system
+        """
+        system_info = self.hooks.system_info()
+        if not system_info:
+            return []
+        system_part = system_info[1]
+        system_part_type = self.part_types[system_part]
+        system_dev = system_info[0]
+        return [self.edify.ui_print("Mounting system..."),
+                self.edify.mount(
+                    system_part, system_part_type, system_dev, "/system"
+                )]
+
+    def create_patches(self, to_diff):
+        """Create and zip the patches
+
+        Args:
+            to_diff (list of str): list of all the files to be diffed
+        """
+        counter = 1
+        amount = len(to_diff)
+
         for f_name in to_diff:
             print("patching " + f_name + ": " + str(counter) + " of " + str(amount))
-            counter += 1
+
             n_file = self.get_file_from_ptr(self.input_ptr[f_name])
             b_file = self.get_file_from_ptr(self.base_ptr[f_name])
             p_data = self.compute_diff(b_file, n_file)
+
             patch_path = "patch/" + f_name + ".p"
             p_file = self.file_object(patch_path, p_data, localtime(time()))
             self.add_to_zip(p_file, self.output_zip)
 
-            if not f_name.startswith("system/"):
-                continue  # for now we skip anything non standard
-            script.append(self.edify.apply_patch_check("/" + f_name,
-                                                       b_file['sha1'],
-                                                       n_file['sha1']))
+            counter += 1
 
-        script.extend(self.assert_boot())
-        script.extend(self.hooks.pre_flash_script())
+    def verify_system(self, to_diff):
+        """Generate edify commands for verifying system, and return
+        as a list
 
-        script.append(self.edify.ui_print("Patching system files..."))
+        Args:
+            to_diff (list of str): list of all the files to be diffed
+        Returns:
+            (list of str): List of commands for verifying the system
+        """
+        script = [self.edify.ui_print("Verifying current system...")]
+
         for f_name in to_diff:
             if not f_name.startswith("system/"):
                 continue  # for now we skip anything non standard
-            n_ptr = self.input_ptr[f_name]
-            b_ptr = self.base_ptr[f_name]
-            n_file = self.get_file_from_ptr(n_ptr)
-            b_file = self.get_file_from_ptr(b_ptr)
+
+            n_file = self.get_file_from_ptr(self.input_ptr[f_name])
+            b_file = self.get_file_from_ptr(self.base_ptr[f_name])
+
+            script.append(self.edify.apply_patch_check("/" + f_name,
+                                                       b_file['sha1'],
+                                                       n_file['sha1']))
+        script.extend(self.assert_boot())
+        return script
+
+    def patch_system(self, to_diff):
+        """Generate edify commands for patching system, and return
+        as a list
+
+        Args:
+            to_diff (list of str): list of all the files to be diffed
+        Returns:
+            (list of str): List of commands for patching the system
+        """
+
+        script = [self.edify.ui_print("Patching system files...")]
+
+        for f_name in to_diff:
+            if not f_name.startswith("system/"):
+                continue  # for now we skip anything non standard
+
+            n_file = self.get_file_from_ptr(self.input_ptr[f_name])
+            b_file = self.get_file_from_ptr(self.base_ptr[f_name])
+
             script.append(self.edify.apply_patch("/" + b_file['name'],
                           "-",
                           n_file['size'],
                           n_file['sha1'],
                           b_file['sha1'],
                           "patch/" + b_file['name'] + ".p"))
-
         script.extend(self.flash_boot())
-        script.extend(self.hooks.post_flash_script())
+        return script
 
-        if system_info:
-            script.append(self.edify.unmount(system_mnt_pnt))
+    def unmount_system(self):
+        """Generate edify commands for unmounting system, and return
+        as a list
+
+        Returns:
+            (list of str): list of commands for unmounting the system
+        """
+        if not self.hooks.system_info():
+            return []
+
+        return [self.edify.ui_print("Unmounting system..."),
+                self.edify.unmount("/system")]
+
+    def generate(self):
+        """Generate the new zip with all the diff files."""
+        if not all([self.base_ptr, self.input_ptr]):
+            self.load_data()
+
+        to_diff = self.find_diffs()
+        self.create_patches(to_diff)
+
+        script = self.mount_system()
+        script.extend(self.verify_system(to_diff))
+        script.extend(self.hooks.pre_flash_script())
+        script.extend(self.patch_system(to_diff))
+        script.extend(self.hooks.post_flash_script())
+        script.extend(self.unmount_system())
 
         self.add_updater(script)
-
         self.output_zip.close()
 
     def assert_boot(self):
