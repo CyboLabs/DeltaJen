@@ -524,14 +524,14 @@ class DeltaJen(object):
             to_diff (list): list of all the files that need a patch.
         """
         to_diff = []
-        to_ignore = self.hooks.to_copy()
+        to_copy = self.hooks.to_copy()
         for f_name in self.input_ptr.keys():
             n_file = self.get_file_from_ptr(self.input_ptr[f_name])
             b_file = self.base_ptr.get(f_name, None)
             if b_file:
                 b_file = self.get_file_from_ptr(b_file)
 
-            if b_file is None or f_name in to_ignore:
+            if b_file is None or f_name in to_copy:
                 self.add_to_zip(n_file, self.output_zip)
             elif n_file['sha1'] != b_file['sha1']:
                 to_diff.append(f_name)
