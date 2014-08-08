@@ -237,6 +237,13 @@ class Edify(object):
         cmd = cmd % mnt_pnt
         return cmd
 
+    def delete(self, file_list):
+        """Delete all files in file_list."""
+        cmd = 'delete('
+        cmd += ', '.join(['"%s"' % i for i in file_list])
+        cmd += ');'
+        return cmd
+
 
 class DeltaJen(object):
     """Generate an incremental update based off two zips."""
@@ -399,6 +406,18 @@ class DeltaJen(object):
         script.extend(self.assert_boot())
         return script
 
+    def delete_files(self):
+        """Generate edify commands for deleting unneeded files
+
+        Returns:
+            (list of str): List of commands for removing files
+        """
+        to_remove = self.find_removes()
+        if not to_remove:
+            return []
+        return [self.edify.ui_print("Removing files..."),
+                self.edify.delete(to_remove)]
+
     def patch_system(self, to_diff):
         """Generate edify commands for patching system, and return
         as a list
@@ -452,6 +471,7 @@ class DeltaJen(object):
         script.extend(self.verify_system(to_diff))
         script.extend(self.hooks.pre_flash_script())
         script.extend(self.patch_system(to_diff))
+        script.extend(self.delete_files())
         script.extend(self.hooks.post_flash_script())
         script.extend(self.unmount_system())
 
