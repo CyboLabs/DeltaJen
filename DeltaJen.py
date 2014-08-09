@@ -41,7 +41,7 @@ from zipfile import ZipFile, ZIP_DEFLATED, ZipInfo
 try:
     from bsdiff4 import diff as bs_diff
 except ImportError:
-    bs_patch = None
+    bs_diff = None
 
 
 class Hooks(object):
