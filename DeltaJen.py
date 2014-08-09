@@ -71,6 +71,7 @@ class Hooks(object):
         self.main = main
         self._boot_info_cache = None
         self._system_info_cache = None
+        self._assert_device_cache = None
 
     def to_copy(self):
         """Return a list of files that should be copied without being patched.
@@ -103,6 +104,28 @@ class Hooks(object):
         use different files.
         """
         return []
+
+    def assert_device(self):
+        """Returns a list of model names to assert before flashing
+
+        If not correctly detected for your device, overwrite
+        this to return the correct value.
+        """
+        if self._assert_device_cache is not None:
+            return self._assert_device_cache
+
+        edify = self.main.get_edify()
+        assertion = re_search(r'assert\(getprop\(' +
+                              '"ro.product.device"\)[\S\s]+"\);\);', edify)
+        if not assertion:
+            self._assert_device_cache = []
+            return []
+
+        assertion = assertion.group()
+        start = assertion.find('This package is for \\"') + 22
+        end = assertion.find('\\" devices;', start)
+        self._assert_device_cache = assertion[start:end].split(',')
+        return self._assert_device_cache
 
     def boot_info(self):
         """Find and return the boot partition info.
@@ -244,6 +267,19 @@ class Edify(object):
         cmd += ');'
         return cmd
 
+    def assert_device(self, device_list):
+        """Assert that this is the correct device"""
+        cmd = 'assert('
+        print(device_list)
+        for device in device_list:
+            cmd += 'getprop("ro.product.device") == "%s" || ' % device
+            cmd += 'getprop("ro.build.product") == "%s" || ' % device
+        cmd += 'abort("This package is for \\"%s\\" devices; '
+        cmd += 'this is a \\"" + getprop("ro.product.device") '
+        cmd += '+ "\\"."););'
+        cmd %= ','.join(device_list)
+        return cmd
+
 
 class DeltaJen(object):
     """Generate an incremental update based off two zips."""
@@ -342,6 +378,18 @@ class DeltaJen(object):
         data = zip_file.read(f_name)
         ttime = zip_file.getinfo(f_name).date_time
         return self.file_object(f_name, data, ttime)
+
+    def assert_device(self):
+        """Generate edify commands for asserting the device, and
+        return as a list
+
+        Returns:
+            (list of str): list of commands for asserting a device
+        """
+        devices = self.hooks.assert_device()
+        if devices:
+            return [self.edify.assert_device(devices)]
+        return []
 
     def mount_system(self):
         """Generate edify commands for mounting system, and return
@@ -468,7 +516,8 @@ class DeltaJen(object):
         to_diff = self.find_diffs()
         self.create_patches(to_diff)
 
-        script = self.mount_system()
+        script = self.assert_device()
+        script.extend(self.mount_system())
         script.extend(self.verify_system(to_diff))
         script.extend(self.hooks.pre_flash_script())
         script.extend(self.patch_system(to_diff))
