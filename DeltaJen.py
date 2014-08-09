@@ -313,6 +313,7 @@ class DeltaJen(object):
         """
         out = {}
         extra = self.hooks.extra_files()
+        extra.extend(self.hooks.to_copy())
         if self.hooks.boot_info():
             extra.append("boot.img")
         for info in zip_file.infolist():
