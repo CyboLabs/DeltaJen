@@ -280,6 +280,16 @@ class Edify(object):
         cmd %= ','.join(device_list)
         return cmd
 
+    def run_program(self, commands):
+        """execute a program
+
+        Args:
+            commands (list of str): command and args to run
+        """
+        cmd = 'run_program(%s);'
+        cmd %= ', '.join(['"%s"' % i for i in commands])
+        return cmd
+
 
 class DeltaJen(object):
     """Generate an incremental update based off two zips."""
