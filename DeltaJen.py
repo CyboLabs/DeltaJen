@@ -186,6 +186,39 @@ class Hooks(object):
             self._system_info_cache = (dev, part)
         return self._system_info_cache
 
+    def custom_patching(self, f_name):
+        """Custom patch hook either on a per file basis, or to
+        fully overwrite the stock implementation.
+
+        Args:
+            f_name (str): name of the current file.
+        Returns:
+            Raw data of a patch file or None.
+        """
+        return None
+
+    def custom_verifying(self, f_name):
+        """Custom verify hook either on a per file basis, or to
+        fully overwrite the stock implementation.
+
+        Args:
+            f_name (str): name of the current file.
+        Returns:
+            list of edify commands for verifying.
+        """
+        return []
+
+    def custom_applying(self, f_name):
+        """Custom apply hook either on a per file basis, or to
+        fully overwrite the stock implementation.
+
+        Args:
+            f_name (str): name of the current file.
+        Returns:
+            list of edify commands for applying.
+        """
+        return []
+
 
 class Edify(object):
     """Class for common edify methods."""
@@ -431,9 +464,12 @@ class DeltaJen(object):
         for f_name in to_diff:
             print("patching " + f_name + ": " + str(counter) + " of " + str(amount))
 
-            n_file = self.get_file_from_ptr(self.input_ptr[f_name])
-            b_file = self.get_file_from_ptr(self.base_ptr[f_name])
-            p_data = self.compute_diff(b_file, n_file)
+            p_data = self.hooks.custom_patching(f_name)
+
+            if not p_data:
+                n_file = self.get_file_from_ptr(self.input_ptr[f_name])
+                b_file = self.get_file_from_ptr(self.base_ptr[f_name])
+                p_data = self.compute_diff(b_file, n_file)
 
             patch_path = "patch/" + f_name + ".p"
             p_file = self.file_object(patch_path, p_data, localtime(time()))
@@ -453,6 +489,15 @@ class DeltaJen(object):
         script = [self.edify.ui_print("Verifying current system...")]
 
         for f_name in to_diff:
+            tmp_script = self.hooks.custom_verifying(f_name)
+            if tmp_script:
+                script.extend(tmp_script)
+                continue
+
+            if f_name == 'boot.img':
+                script.extend(self.assert_boot())
+                continue
+
             if not f_name.startswith("system/"):
                 continue  # for now we skip anything non standard
 
@@ -462,7 +507,6 @@ class DeltaJen(object):
             script.append(self.edify.apply_patch_check("/" + f_name,
                                                        b_file['sha1'],
                                                        n_file['sha1']))
-        script.extend(self.assert_boot())
         return script
 
     def delete_files(self):
@@ -490,6 +534,15 @@ class DeltaJen(object):
         script = [self.edify.ui_print("Patching system files...")]
 
         for f_name in to_diff:
+            tmp_script = self.hooks.custom_applying(f_name)
+            if tmp_script:
+                script.extend(tmp_script)
+                continue
+
+            if f_name == 'boot.img':
+                script.extend(self.flash_boot())
+                continue
+
             if not f_name.startswith("system/"):
                 continue  # for now we skip anything non standard
 
@@ -502,7 +555,6 @@ class DeltaJen(object):
                           n_file['sha1'],
                           b_file['sha1'],
                           "patch/" + b_file['name'] + ".p"))
-        script.extend(self.flash_boot())
         return script
 
     def unmount_system(self):
