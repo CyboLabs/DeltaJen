@@ -700,11 +700,8 @@ class DeltaJen(object):
             ".zip": ["imgdiff", "-z"],
         }
 
-        if os_name == "nt":
-            cmd = ['bsdiff']
-        else:
-            ext = path.splitext(b_file['name'])[1]
-            cmd = diff_programs.get(ext, ['bsdiff'])
+        ext = path.splitext(b_file['name'])[1]
+        cmd = diff_programs.get(ext, ['bsdiff'])
 
         if cmd == ['bsdiff'] and bs_diff:
             return bs_diff(bytes(b_file['data']), bytes(n_file['data']))
