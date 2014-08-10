@@ -16,7 +16,7 @@ LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := bsdiff.c
-LOCAL_MODULE := bsdiff
+LOCAL_MODULE := win_bsdiff
 LOCAL_C_INCLUDES += external/bzip2
 LOCAL_STATIC_LIBRARIES := libbz
 include $(BUILD_HOST_EXECUTABLE)
