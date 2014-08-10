@@ -1,0 +1,156 @@
+diff --git a/applypatch/bsdiff.c b/applypatch/bsdiff.c
+index b6d342b..c0bdd26 100644
+--- a/applypatch/bsdiff.c
++++ b/applypatch/bsdiff.c
+@@ -45,15 +45,52 @@
+  * POSSIBILITY OF SUCH DAMAGE.
+  */
+
+-#include <sys/types.h>
+-
+-#include <bzlib.h>
+-#include <err.h>
+-#include <fcntl.h>
+-#include <stdio.h>
+ #include <stdlib.h>
++#include <stdio.h>
+ #include <string.h>
+ #include <unistd.h>
++#include <fcntl.h>
++#include <bzlib.h>
++
++#if !defined(_WIN32)
++#include <err.h>
++#else
++#include <windows.h>
++
++static int err(int eval, const char* fmt, ...)
++{
++	const char* errortext;
++	char* strp;
++	va_list args;
++
++	errortext = strerror(errno);
++	if (fmt != NULL || strcmp(fmt,"") != 0) {
++		strp = (char*)malloc(1024 * sizeof(char));
++		va_start(args, fmt);
++		vsnprintf(strp, 1023, fmt, args);
++		va_end(args);
++		fprintf(stderr, "%s: %s\b", strp, errortext);
++		free(strp);
++	} else {
++		fprintf(stderr, "%s\n", errortext);
++	}
++
++	exit(eval);
++	return 0;
++}
++
++static int errx(int eval, const char* fmt, ...)
++{
++	va_list args;
++	va_start(args, fmt);
++	vfprintf(stderr, fmt, args);
++	va_end(args);
++
++	exit(eval);
++	return 0;
++}
++
++#endif
+
+ #define MIN(x,y) (((x)<(y)) ? (x) : (y))
+
+@@ -255,7 +292,7 @@ int bsdiff(u_char* old, off_t oldsize, off_t** IP, u_char* new, off_t newsize,
+ 	eblen=0;
+
+ 	/* Create the patch file */
+-	if ((pf = fopen(patch_filename, "w")) == NULL)
++	if ((pf = fopen(patch_filename, "wb")) == NULL)
+               err(1, "%s", patch_filename);
+
+ 	/* Header is
+@@ -365,7 +402,7 @@ int bsdiff(u_char* old, off_t oldsize, off_t** IP, u_char* new, off_t newsize,
+ 		errx(1, "BZ2_bzWriteClose, bz2err = %d", bz2err);
+
+ 	/* Compute size of compressed ctrl data */
+-	if ((len = ftello(pf)) == -1)
++	if ((len = ftell(pf)) == -1)
+ 		err(1, "ftello");
+ 	offtout(len-32, header + 8);
+
+@@ -380,7 +417,7 @@ int bsdiff(u_char* old, off_t oldsize, off_t** IP, u_char* new, off_t newsize,
+ 		errx(1, "BZ2_bzWriteClose, bz2err = %d", bz2err);
+
+ 	/* Compute size of compressed diff data */
+-	if ((newsize = ftello(pf)) == -1)
++	if ((newsize = ftell(pf)) == -1)
+ 		err(1, "ftello");
+ 	offtout(newsize - len, header + 16);
+
+@@ -395,7 +432,7 @@ int bsdiff(u_char* old, off_t oldsize, off_t** IP, u_char* new, off_t newsize,
+ 		errx(1, "BZ2_bzWriteClose, bz2err = %d", bz2err);
+
+ 	/* Seek to the beginning, write the header, and close the file */
+-	if (fseeko(pf, 0, SEEK_SET))
++	if (fseek(pf, 0, SEEK_SET))
+ 		err(1, "fseeko");
+ 	if (fwrite(header, 32, 1, pf) != 1)
+ 		err(1, "fwrite(%s)", patch_filename);
+diff --git a/applypatch/imgdiff.c b/applypatch/imgdiff.c
+index 05c4f25..580442d 100644
+--- a/applypatch/imgdiff.c
++++ b/applypatch/imgdiff.c
+@@ -133,6 +133,10 @@
+ #include "imgdiff.h"
+ #include "utils.h"
+
++#if defined(_WIN32)
++#include <windows.h>
++#endif
++
+ typedef struct {
+   int type;             // CHUNK_NORMAL, CHUNK_DEFLATE
+   size_t start;         // offset of chunk in original image file
+@@ -613,8 +617,13 @@ unsigned char* MakePatch(ImageChunk* src, ImageChunk* tgt, size_t* size) {
+     }
+   }
+
++#if !defined(_WIN32)
+   char ptemp[] = "/tmp/imgdiff-patch-XXXXXX";
+   mkstemp(ptemp);
++#else
++  char ptemp[] = "imgdiff-patch-XXXXXX";
++  _mktemp(ptemp);
++#endif
+
+   int r = bsdiff(src->data, src->len, &(src->I), tgt->data, tgt->len, ptemp);
+   if (r != 0) {
+@@ -632,7 +641,11 @@ unsigned char* MakePatch(ImageChunk* src, ImageChunk* tgt, size_t* size) {
+   unsigned char* data = malloc(st.st_size);
+
+   if (tgt->type == CHUNK_NORMAL && tgt->len <= st.st_size) {
++#if !defined(_WIN32)
+     unlink(ptemp);
++#else
++    remove(ptemp);
++#endif
+
+     tgt->type = CHUNK_RAW;
+     *size = tgt->len;
+@@ -652,7 +665,15 @@ unsigned char* MakePatch(ImageChunk* src, ImageChunk* tgt, size_t* size) {
+   }
+   fclose(f);
+
++#if !defined(_WIN32)
+   unlink(ptemp);
++#else
++  int ret = remove(ptemp);
++  if (ret != 0)
++    printf("error:%d: unable to delete file\n", errno);
++#endif
++
++
+
+   tgt->source_start = src->start;
+   switch (tgt->type) {
