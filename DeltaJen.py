@@ -691,11 +691,6 @@ class DeltaJen(object):
         Returns:
             raw data of the patch file.
         """
-        if os_name == "nt":
-            if not bs_diff:
-                print("ERROR: python bsdiff4 is required for windows")
-                exit(1)
-            return bs_diff(bytes(b_file['data']), bytes(n_file['data']))
 
         diff_programs = {
             ".gz": ["imgdiff"],
@@ -705,8 +700,11 @@ class DeltaJen(object):
             ".zip": ["imgdiff", "-z"],
         }
 
-        ext = path.splitext(b_file['name'])[1]
-        cmd = diff_programs.get(ext, ['bsdiff'])
+        if os_name == "nt":
+            cmd = ['bsdiff']
+        else:
+            ext = path.splitext(b_file['name'])[1]
+            cmd = diff_programs.get(ext, ['bsdiff'])
 
         if cmd == ['bsdiff'] and bs_diff:
             return bs_diff(bytes(b_file['data']), bytes(n_file['data']))
