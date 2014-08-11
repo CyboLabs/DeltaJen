@@ -32,7 +32,7 @@ __version__ = "0.1a1"
 from hashlib import sha1
 from os import path, devnull, close as os_close, remove
 from re import search as re_search
-from subprocess import Popen, STDOUT
+from subprocess import Popen
 from tempfile import mkstemp
 from time import localtime, time
 from zipfile import ZipFile, ZIP_DEFLATED, ZipInfo
@@ -712,7 +712,7 @@ class DeltaJen(object):
 
         try:
             cmd.extend([b_path, n_path, p_path])
-            out = STDOUT if self.verbose else open(devnull, 'w')
+            out = None if self.verbose else open(devnull, 'w')
             p = Popen(cmd, stdout=out)
             _, err = p.communicate()
             if err or p.returncode != 0:
