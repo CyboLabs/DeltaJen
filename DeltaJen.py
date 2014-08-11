@@ -29,6 +29,7 @@ __author__ = "Anthony 'Cybojenix' King"
 __program__ = "DeltaJen"
 __version__ = "0.1a1"
 
+from fnmatch import fnmatch
 from hashlib import sha1
 from os import path, devnull, close as os_close, remove
 from re import search as re_search
@@ -206,6 +207,23 @@ class Hooks(object):
         Returns:
             list of edify commands for verifying.
         """
+        patch_gapps = False
+        for pattern in self.main.gapps_files:
+            if fnmatch(f_name, pattern):
+                patch_gapps = True
+                break
+
+        if patch_gapps:
+            n_file = self.main.get_file_from_ptr(
+                self.main.input_ptr[f_name])
+            b_file = self.main.get_file_from_ptr(
+                self.main.base_ptr[f_name])
+            return [self.main.edify.apply_patch_check(
+                "/" + f_name,
+                b_file['sha1'],
+                n_file['sha1'],
+                abort=False)]
+
         return []
 
     def custom_applying(self, f_name):
@@ -217,13 +235,33 @@ class Hooks(object):
         Returns:
             list of edify commands for applying.
         """
+        patch_gapps = False
+        for pattern in self.main.gapps_files:
+            if fnmatch(f_name, pattern):
+                patch_gapps = True
+                break
+
+        if patch_gapps:
+            n_file = self.main.get_file_from_ptr(
+                self.main.input_ptr[f_name])
+            b_file = self.main.get_file_from_ptr(
+                self.main.base_ptr[f_name])
+            return [self.main.edify.apply_patch(
+                "/" + b_file['name'],
+                "-",
+                n_file['size'],
+                n_file['sha1'],
+                b_file['sha1'],
+                "patch/" + b_file['name'] + ".p",
+                abort=False)]
+
         return []
 
 
 class Edify(object):
     """Class for common edify methods."""
 
-    def apply_patch_check(self, f_name, *sha):
+    def apply_patch_check(self, f_name, *sha, **kwargs):
         """Check that the given file (or mount point reference) has
         one of the given sha1 hashes.
 
@@ -231,10 +269,18 @@ class Edify(object):
             f_name (str): File name and path of the file to check.
             sha (str): tuple of sha1sums to check the file against.
         """
+        abort = kwargs.get('abort', True)
+
         cmd = 'apply_patch_check("%s"'
         cmd += ''.join([', "%s"' % i for i in sha])
-        cmd += ') || abort("\\"%s\\" has unexpected contents.");'
-        cmd = cmd % (f_name, f_name)
+        cmd += ') || '
+        if abort:
+            cmd += self.abort(
+                '\\"%s\\" has unexpected contents.' % f_name)
+        else:
+            cmd += self.ui_print(
+                '\\"%s\\" has unexpected contents. assuming fine.' % f_name)
+        cmd = cmd % f_name
         return cmd
 
     def ui_print(self, message):
@@ -247,7 +293,8 @@ class Edify(object):
         cmd = cmd % message
         return cmd
 
-    def apply_patch(self, b_name, n_name, n_size, n_sha, *patch_pairs):
+    def apply_patch(self, b_name, n_name, n_size,
+                    n_sha, *patch_pairs, **kwargs):
         """Apply binary patches (in *patch_pairs) to the given base
         file (b_name) to produce the new file (n_name)
 
@@ -260,14 +307,21 @@ class Edify(object):
             patch_pairs (str): tuple of the base file sha1sum,
                 and the file name of the patch file.
         """
+        abort = kwargs.get('abort', True)
+
         if len(patch_pairs) % 2 != 0 or len(patch_pairs) == 0:
             raise ValueError("bad patches given to ApplyPatch")
         cmd = 'apply_patch("%s", "%s", %s, %d'
         cmd = cmd % (b_name, n_name, n_sha, n_size)
         for i in range(0, len(patch_pairs), 2):
             cmd += ', %s, package_extract_file("%s")'
-            cmd = cmd % patch_pairs[i:i+2]
-        cmd += ');'
+            cmd %= patch_pairs[i:i+2]
+        if abort:
+            cmd += ');'
+        else:
+            cmd += ') || %s' % self.ui_print(
+                '\\"%s\\" has unexpected contents. assuming fine.' % b_name
+            )
         return cmd
 
     def mount(self, fs_type, part_type, device, mnt_pnt):
@@ -323,12 +377,23 @@ class Edify(object):
         cmd %= ', '.join(['"%s"' % i for i in commands])
         return cmd
 
+    def abort(self, message):
+        """Log a message to the screen and abort
+
+        Args:
+            message (str): message to display on screen.
+        """
+        cmd = 'abort("%s");'
+        cmd %= message
+        return cmd
+
 
 class DeltaJen(object):
     """Generate an incremental update based off two zips."""
 
     def __init__(self, base_zip, input_zip, output_zip,
-                 hooks=Hooks, edify=Edify, verbose=False):
+                 hooks=Hooks, edify=Edify, verbose=False,
+                 gapps_files=[]):
         """Initialize the DeltaJen class.
 
         Args:
@@ -357,6 +422,8 @@ class DeltaJen(object):
         self.base_ptr = None
         self.input_ptr = None
         self.verbose = verbose
+
+        self.gapps_files = gapps_files
 
         self.edify = edify()
         self.hooks = hooks(self)
@@ -821,8 +888,65 @@ def cli():
                         help="Output version information")
 
     options = parser.parse_args()
+
+    # this list is based on files that are in both
+    # PA full gapps, and cm11
+    gapps_files = ['system/lib/libjni_latinime.so',
+                   'system/priv-app/CalendarProvider.apk',
+                   'system/app/Camera.apk',
+                   'system/app/Camera2.apk',
+                   'system/priv-app/Camera.apk',
+                   'system/priv-app/Camera2.apk',
+                   'system/lib/libjpeg.so',
+                   'system/lib/liblightcycle.so',
+                   'system/lib/libnativehelper_compat_libc++.so',
+                   'system/lib/librefocus.so',
+                   'system/lib/librs.layered_filter_f32.so',
+                   'system/lib/librs.layered_filter_fast_f32.so',
+                   'system/lib/librsjni.so',
+                   'system/lib/libRSSupport.so',
+                   'system/lib/libjni_eglfence.so',
+                   'system/lib/libjni_filtershow_filters.so',
+                   'system/app/Gallery.apk',
+                   'system/priv-app/Gallery.apk',
+                   'system/app/Gallery2.apk',
+                   'system/priv-app/Gallery2.apk',
+                   'system/app/FaceLock.apk',
+                   'system/lib/libfacelock_jni.so',
+                   'system/lib/libfilterpack_facedetect.so',
+                   'system/vendor/pittpatt/*',
+                   "system/app/CMHome.apk",
+                   "system/app/CustomLauncher3.apk",
+                   "system/app/Launcher2.apk",
+                   "system/app/Launcher3.apk",
+                   "system/app/LiquidLauncher.apk",
+                   "system/app/Paclauncher.apk",
+                   "system/app/Trebuchet.apk",
+                   "system/priv-app/CMHome.apk",
+                   "system/priv-app/CustomLauncher3.apk",
+                   "system/priv-app/Launcher2.apk",
+                   "system/priv-app/Launcher3.apk",
+                   "system/priv-app/LiquidLauncher.apk",
+                   "system/priv-app/Paclauncher.apk",
+                   "system/priv-app/Trebuchet.apk",
+                   'system/app/Browser.apk',
+                   'system/priv-app/PicoTts.apk',
+                   'system/app/PicoTts.apk',
+                   'system/lib/libttscompat.so',
+                   'system/lib/libttspico.so',
+                   'system/tts/lang_pico/*',
+                   'system/priv-app/Mms.apk',
+                   'system/app/LatinIME.apk',
+                   "system/app/ChromeBookmarksSyncAdapter.apk",
+                   "system/app/BrowserProviderProxy.apk",
+                   "system/app/Calendar.apk",
+                   "system/priv-app/Calendar.apk",
+                   "system/app/OneTimeInitializer.apk",
+                   "system/priv-app/OneTimeInitializer.apk"]
+
     dj = DeltaJen(options.base_zip, options.input_zip,
-                  options.output_zip, verbose=options.verbose)
+                  options.output_zip, verbose=options.verbose,
+                  gapps_files=gapps_files)
     dj.generate()
 
 if __name__ == '__main__':
