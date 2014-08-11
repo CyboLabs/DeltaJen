@@ -30,10 +30,10 @@ __program__ = "DeltaJen"
 __version__ = "0.1a1"
 
 from hashlib import sha1
-from os import path, devnull, name as os_name
+from os import path, devnull, close as os_close, remove
 from re import search as re_search
 from subprocess import Popen, STDOUT
-from tempfile import NamedTemporaryFile
+from tempfile import mkstemp
 from time import localtime, time
 from zipfile import ZipFile, ZIP_DEFLATED, ZipInfo
 
@@ -706,18 +706,35 @@ class DeltaJen(object):
         if cmd == ['bsdiff'] and bs_diff:
             return bs_diff(bytes(b_file['data']), bytes(n_file['data']))
 
-        b_temp = self.write_to_temp(b_file)
-        n_temp = self.write_to_temp(n_file)
-        p_temp = NamedTemporaryFile()
+        b_fd, b_path = self.write_to_temp(b_file)
+        n_fd, n_path = self.write_to_temp(n_file)
+        p_fd, p_path = mkstemp()
 
-        cmd.extend([b_temp.name, n_temp.name, p_temp.name])
-        out = STDOUT if self.verbose else open(devnull, 'w')
-        p = Popen(cmd, stdout=out)
-        _, err = p.communicate()
-        if err or p.returncode != 0:
-            print("WARNING: failure running %s" % cmd)
-            return None
-        return p_temp.read()
+        try:
+            cmd.extend([b_path, n_path, p_path])
+            out = STDOUT if self.verbose else open(devnull, 'w')
+            p = Popen(cmd, stdout=out)
+            _, err = p.communicate()
+            if err or p.returncode != 0:
+                print("WARNING: failure running %s" % cmd)
+                output = None
+            else:
+                f = open(p_path, 'rb')
+                output = f.read()
+                f.close()
+        finally:
+            self.cleanup_tmp([b_fd, n_fd, p_fd],
+                             [b_path, n_path, p_path])
+
+        return output
+
+    @staticmethod
+    def cleanup_tmp(fd_list, path_list):
+        """Clean up tmp files made by mkstemp"""
+        for fd in fd_list:
+            os_close(fd)
+        for _path in path_list:
+            remove(_path)
 
     @staticmethod
     def _is_symlink(info):
@@ -764,10 +781,11 @@ class DeltaJen(object):
         z_file.writestr(zinfo, file_obj['data'])
 
     @staticmethod
-    def write_to_temp(file_obj, delete=True):
-        t = NamedTemporaryFile(delete=delete)
-        t.write(file_obj['data'])
-        t.flush()
+    def write_to_temp(file_obj):
+        t = mkstemp()
+        f = open(t[1], 'wb')
+        f.write(file_obj['data'])
+        f.close()
         return t
 
 
