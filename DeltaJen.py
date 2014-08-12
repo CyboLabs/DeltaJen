@@ -257,6 +257,24 @@ class Hooks(object):
 
         return []
 
+    def symlinks(self):
+        """Returns a list of files to symlink
+
+        list of tuples made up of a string and list of strings
+
+        _example = [
+            ("base_file1", [
+                "new_file1",
+                "new_file2"
+            ]),
+            ("base_file2", [
+                "new_file3",
+                "new_file4"
+            ])
+        ]
+        """
+        return []
+
 
 class Edify(object):
     """Class for common edify methods."""
@@ -386,6 +404,19 @@ class Edify(object):
         cmd = 'abort("%s");'
         cmd %= message
         return cmd
+
+    def symlink(self, base_file, link_files):
+        """Create symlink of base_file to link_files.
+
+        Args:
+            base_file (str): base file to be symlinked to link_files.
+            link_files (list of str): list of new files that will be
+                symlinked.
+        """
+        cmd = 'symlink("%s", %s);'
+        cmd %= (base_file, ', '.join(['"%s"' % i for i in link_files]))
+        return cmd
+
 
 
 class DeltaJen(object):
@@ -624,6 +655,19 @@ class DeltaJen(object):
                           "patch/" + b_file['name'] + ".p"))
         return script
 
+    def symlink_files(self):
+        """Find and return edify symlink commands
+
+        Returns:
+            (list of str): list of edify symlink files
+        """
+        to_symlink = self.hooks.symlinks()
+        script = []
+        for base_file, link_files in to_symlink:
+            script.append(self.edify.symlink(base_file, link_files))
+
+        return script
+
     def unmount_system(self):
         """Generate edify commands for unmounting system, and return
         as a list
@@ -651,6 +695,7 @@ class DeltaJen(object):
         script.extend(self.hooks.pre_flash_script())
         script.extend(self.patch_system(to_diff))
         script.extend(self.delete_files())
+        script.extend(self.symlink_filies())
         script.extend(self.hooks.post_flash_script())
         script.extend(self.unmount_system())
 
