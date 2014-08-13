@@ -695,7 +695,7 @@ class DeltaJen(object):
         script.extend(self.hooks.pre_flash_script())
         script.extend(self.patch_system(to_diff))
         script.extend(self.delete_files())
-        script.extend(self.symlink_filies())
+        script.extend(self.symlink_files())
         script.extend(self.hooks.post_flash_script())
         script.extend(self.unmount_system())
 
