@@ -987,7 +987,8 @@ def cli():
                    "system/app/Calendar.apk",
                    "system/priv-app/Calendar.apk",
                    "system/app/OneTimeInitializer.apk",
-                   "system/priv-app/OneTimeInitializer.apk"]
+                   "system/priv-app/OneTimeInitializer.apk",
+                   "system/framework/qcmediaplayer.jar"]
 
     dj = DeltaJen(options.base_zip, options.input_zip,
                   options.output_zip, verbose=options.verbose,
