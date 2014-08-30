@@ -137,7 +137,6 @@ class Hooks(object):
         if self._boot_info_cache is not None:
             return self._boot_info_cache
 
-        print("WARNING: boot information not supplied.")
         edify = self.main.get_edify()
         if edify.find('assert(package_extract_file("boot.img", ' +
                       '"/tmp/boot.img")') != -1:
@@ -172,7 +171,6 @@ class Hooks(object):
         """
         if self._system_info_cache is not None:
             return self._system_info_cache
-        print("WARNING: system partition information not supplied")
 
         edify = self.main.get_edify()
         mount = re_search(r'mount\("(\S+)"\s*,\s*' +
