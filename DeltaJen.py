@@ -375,7 +375,6 @@ class Edify(object):
     def assert_device(self, device_list):
         """Assert that this is the correct device"""
         cmd = 'assert('
-        print(device_list)
         for device in device_list:
             cmd += 'getprop("ro.product.device") == "%s" || ' % device
             cmd += 'getprop("ro.build.product") == "%s" || ' % device
